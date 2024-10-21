@@ -16,7 +16,6 @@ public:
     quint64 time;
 
     MouseEvent();
-    MouseEvent(const MouseEvent&me);
     MouseEvent(int _action, QPointF _pos, quint64 _time);
 
     friend QDataStream &operator<<(QDataStream &out, const MouseEvent &evt);
@@ -29,6 +28,7 @@ class Scribbler : public QGraphicsView
     double lineWidth;
     QPointF lastPoint;
 
+    bool capture;
     QList<MouseEvent> events;
 
     QList<QGraphicsLineItem *> lines;
@@ -39,10 +39,14 @@ public:
     Scribbler();
 
     void linesVisible(bool visible);
+    void flipCapture(bool cap);
     void resetScribbles();
     QList<MouseEvent> returnEvents();
     void addDot(QPointF p);
     void addLine(QPointF p0, QPointF p1);
+
+public slots:
+    void resetEvents();
 
 protected:
     void mouseMoveEvent(QMouseEvent *evt) override;

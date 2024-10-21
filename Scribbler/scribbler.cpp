@@ -4,10 +4,6 @@
 
 MouseEvent::MouseEvent() {}
 
-MouseEvent::MouseEvent(const MouseEvent &me) {
-
-}
-
 MouseEvent::MouseEvent(int _action, QPointF _pos, quint64 _time)
     :action(_action),pos(_pos),time(_time) { }
 
@@ -23,16 +19,21 @@ Scribbler::Scribbler()
     :lineWidth(4.0){
     setScene(&scene);
     setSceneRect(QRectF(0.0, 0.0, 800.0, 600.0));
-    setMinimumSize(QSize(800, 600));
     setRenderHint(QPainter::Antialiasing, true);
 
     scene.addRect(sceneRect());
+
+    capture = false;
 }
 
 void Scribbler::linesVisible(bool visible) {
     for (int i = 0; i < lines.length(); ++i) {
         lines.at(i)->setVisible(visible);
     }
+}
+
+void Scribbler::flipCapture(bool cap) {
+    capture = cap;
 }
 
 void Scribbler::resetScribbles() {
@@ -52,8 +53,6 @@ void Scribbler::addDot(QPointF p) {
     tempDot = scene.addEllipse(QRectF(p - QPointF(lineWidth * 0.5, lineWidth * 0.5), QSizeF(lineWidth, lineWidth)), Qt::NoPen, Qt::black);
 
     dots.append(tempDot);
-
-    events << MouseEvent(MouseEvent::Press, p, 0);
 }
 
 void Scribbler::addLine(QPointF p0 , QPointF p1) {
@@ -61,9 +60,10 @@ void Scribbler::addLine(QPointF p0 , QPointF p1) {
     tempLine = scene.addLine(QLineF(p0, p1), QPen(Qt::black, lineWidth, Qt::SolidLine, Qt::FlatCap));
 
     lines.append(tempLine);
+}
 
-
-    events << MouseEvent(MouseEvent::Move, p1, 0);
+void Scribbler::resetEvents() {
+    events.clear();
 }
 
 void Scribbler::mousePressEvent(QMouseEvent *evt) {
@@ -77,7 +77,7 @@ void Scribbler::mousePressEvent(QMouseEvent *evt) {
 
     dots.append(tempDot);
 
-    events << MouseEvent(MouseEvent::Press, p, evt->timestamp());
+    if (capture) events << MouseEvent(MouseEvent::Press, p, evt->timestamp());
 }
 
 void Scribbler::mouseMoveEvent(QMouseEvent *evt) {
@@ -95,7 +95,7 @@ void Scribbler::mouseMoveEvent(QMouseEvent *evt) {
 
     lastPoint = p;
 
-    events << MouseEvent(MouseEvent::Move, p, evt->timestamp());
+    if (capture) events << MouseEvent(MouseEvent::Move, p, evt->timestamp());
 }
 
 void Scribbler::mouseReleaseEvent(QMouseEvent *evt) {
@@ -103,7 +103,5 @@ void Scribbler::mouseReleaseEvent(QMouseEvent *evt) {
 
     QPointF p = mapToScene(evt->pos());
 
-    events << MouseEvent(MouseEvent::Release, p, evt->timestamp());
-
-    // qDebug() << events;
+    if (capture) events << MouseEvent(MouseEvent::Release, p, evt->timestamp());
 }

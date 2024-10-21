@@ -5,14 +5,17 @@
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
 {
-    QHBoxLayout *center = new QHBoxLayout();
+    QWidget *center = new QWidget();
+    QHBoxLayout *layout = new QHBoxLayout();
     scribbler = new Scribbler();
     tabCount = 0;
     tabs = new QTabWidget();
-    for (int i = 0; i < tabs->count(); ++i) tabs->setTabVisible(i, false);
-    tabs->setTabVisible(0, false);
-    center->addWidget(scribbler);
-    center->addWidget(tabs);
+    tabs->setVisible(false);
+    center->setLayout(layout);
+    layout->addWidget(scribbler, 1);
+    layout->addWidget(tabs, 1);
+
+    connect(this, &MainWindow::clearEvents, scribbler, &Scribbler::resetEvents);
 
     QAction *resetScribbleAct = new QAction("&Reset Scribble");
     connect(resetScribbleAct, &QAction::triggered, this, &MainWindow::resetScribbleSlot);
@@ -59,40 +62,70 @@ MainWindow::MainWindow(QWidget *parent)
     menuBar()->addMenu(captureMenu);
     menuBar()->addMenu(viewMenu);
 
-    setCentralWidget(scribbler);
+    setCentralWidget(center);
+
+    QSettings settings("FJS Systems", "Graphics1");
+    lastDir = settings.value("lastDir", "").toString();
 }
 
-MainWindow::~MainWindow() {}
+MainWindow::~MainWindow() {
+    QSettings settings("FJS Systems", "Graphics1");
+    settings.setValue("lastDir", lastDir);
+}
 
 void MainWindow::resetScribbleSlot() {
-    for (int i = 0; i < tabs->count(); ++i) tabs->removeTab(i);
     tabCount = 0;
     scribbler->resetScribbles();
+    dataHistory.clear();
+    tabs->clear();
+    tabs->setVisible(false);
 }
 
-// This method does not work
 void MainWindow::openFileSlot() {
     resetScribbleSlot();
 
-    QString inFileName = QFileDialog::getOpenFileName();
+    QString inFileName = QFileDialog::getOpenFileName(this, "Select Scribble File",  lastDir);
     QFile in(inFileName);
     if(!in.open(QIODevice::ReadOnly)) {
         QMessageBox::information(this, "Error", QString("Can't open file \"%1\"").arg(inFileName));
         return;
     }
     QDataStream data(&in);
-    qsizetype size = 0;
-    data >> size;
-    QList<MouseEvent> events = QList<MouseEvent>(size);
-    for(int i = 0; i < size; ++i) data >> events[i];
+    data >> dataHistory;
 
-    for(int i = 0; i < size; ++i) {
-        if (events[i].action == MouseEvent::Move) {
-            scribbler->addDot(events[i].pos);
-        } else if (events[i].action == MouseEvent::Press) {
-            scribbler->addDot(events[i].pos);
-            scribbler->addLine(events[i - 1].pos, events[i].pos);
+    for(int i = 0; i < dataHistory.length(); ++i) {
+        for(int j = 0; j < dataHistory[i].length(); ++j) {
+            if (dataHistory[i][j].action == MouseEvent::Press) {
+                scribbler->addDot(dataHistory[i][j].pos);
+            } else if (dataHistory[i][j].action == MouseEvent::Move) {
+                scribbler->addDot(dataHistory[i][j].pos);
+                scribbler->addLine(dataHistory[i][j - 1].pos, dataHistory[i][j].pos);
+            }
         }
+
+        QTableWidget *table = new QTableWidget();
+        table->setRowCount(dataHistory[i].length());
+        table->setColumnCount(3);
+        table->setHorizontalHeaderLabels(QStringList() << "Mouse Event" << "Position" << "Timestamp");
+        for (int row = 0; row < dataHistory[i].length(); ++row) {
+            QTableWidgetItem *item1;
+            if (dataHistory[i][row].action == 0) {
+                item1 = new QTableWidgetItem("Press");
+            } else if (dataHistory[i][row].action == 1) {
+                item1 = new QTableWidgetItem("Move");
+            } else {
+                item1 = new QTableWidgetItem("Release");
+            }
+            table->setItem(row, 0, item1);
+            QTableWidgetItem *item2 = new QTableWidgetItem(QString("(%1, %2)").arg(dataHistory[i][row].pos.x()).arg(dataHistory[i][row].pos.y()));
+            table->setItem(row, 1, item2);
+            QTableWidgetItem *item3 = new QTableWidgetItem(QString::number(dataHistory[i][row].time));
+            table->setItem(row, 2, item3);
+        }
+
+        ++tabCount;
+        tabs->addTab(table, "Table " + QString::number(tabCount));
+        tabs->setVisible(true);
     }
 }
 
@@ -104,20 +137,44 @@ void MainWindow::saveFileSlot() {
         return;
     }
     QDataStream out(&file);
-    QList<MouseEvent> events = scribbler->returnEvents();
-    out << events.length();
-    for(int i = 0; i < events.length(); ++i) out << events.at(i);
+    out << dataHistory;
 }
 
 void MainWindow::startCaptureSlot() {
-
+    scribbler->flipCapture(true);
+    emit clearEvents();
 }
 
 void MainWindow::endCaptureSlot() {
+    scribbler->flipCapture(false);
+    QList<MouseEvent> events = scribbler->returnEvents();
+    dataHistory << events;
+    emit clearEvents();
+
     QTableWidget *table = new QTableWidget();
-    tabs->addTab(table, "Table");
+    table->setRowCount(events.length());
+    table->setColumnCount(3);
+    table->setHorizontalHeaderLabels(QStringList() << "Mouse Event" << "Position" << "Timestamp");
+    for (int iRow = 0; iRow < events.length(); ++iRow) {
+        QTableWidgetItem *item1;
+        if (events[iRow].action == 0) {
+            item1 = new QTableWidgetItem("Press");
+        } else if (events[iRow].action == 1) {
+            item1 = new QTableWidgetItem("Move");
+        } else {
+            item1 = new QTableWidgetItem("Release");
+        }
+        table->setItem(iRow, 0, item1);
+        QTableWidgetItem *item2 = new QTableWidgetItem(QString("(%1, %2)").arg(events[iRow].pos.x()).arg(events[iRow].pos.y()));
+        table->setItem(iRow, 1, item2);
+        QTableWidgetItem *item3 = new QTableWidgetItem(QString::number(events[iRow].time));
+        table->setItem(iRow, 2, item3);
+    }
+
     ++tabCount;
-    for (int i = 0; i < tabs->count(); ++i) tabs->setTabVisible(i, true);
+    tabs->addTab(table, "Table " + QString::number(tabCount));
+    tabs->setVisible(true);
+
 }
 
 void MainWindow::lineSegmentsSlot() {

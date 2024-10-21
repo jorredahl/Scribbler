@@ -8,9 +8,12 @@ class MainWindow : public QMainWindow
 {
     Q_OBJECT
 
+    QString lastDir;
+
     Scribbler *scribbler;
     QTabWidget *tabs;
     int tabCount;
+    QList<QList<MouseEvent>> dataHistory;
 
 public:
     MainWindow(QWidget *parent = nullptr);
@@ -24,5 +27,9 @@ public slots:
     void endCaptureSlot();
     void lineSegmentsSlot();
     void dotsOnlySlot();
+
+signals:
+    void clearEvents();
+
 };
 #endif // MAINWINDOW_H
