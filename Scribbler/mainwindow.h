@@ -2,6 +2,7 @@
 #define MAINWINDOW_H
 
 #include <QMainWindow>
+#include <QTableWidget>
 #include "scribbler.h"
 
 class MainWindow : public QMainWindow
@@ -13,6 +14,7 @@ class MainWindow : public QMainWindow
     Scribbler *scribbler;
     QTabWidget *tabs;
     int tabCount;
+    QList<QTableWidget*> tables;
     QList<QList<MouseEvent>> dataHistory;
 
 public:
@@ -27,6 +29,7 @@ public slots:
     void endCaptureSlot();
     void lineSegmentsSlot();
     void dotsOnlySlot();
+    void highlightItem();
 
 signals:
     void clearEvents();

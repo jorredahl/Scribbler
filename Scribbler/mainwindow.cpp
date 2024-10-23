@@ -17,6 +17,8 @@ MainWindow::MainWindow(QWidget *parent)
 
     connect(this, &MainWindow::clearEvents, scribbler, &Scribbler::resetEvents);
 
+    connect(tabs, &QTabWidget::currentChanged, scribbler, &Scribbler::tabSelectedSlot);
+
     QAction *resetScribbleAct = new QAction("&Reset Scribble");
     connect(resetScribbleAct, &QAction::triggered, this, &MainWindow::resetScribbleSlot);
     resetScribbleAct->setShortcut(Qt::CTRL | Qt::Key_R);
@@ -64,18 +66,19 @@ MainWindow::MainWindow(QWidget *parent)
 
     setCentralWidget(center);
 
-    QSettings settings("FJS Systems", "Graphics1");
+    QSettings settings("FJS Systems", "Scribbler");
     lastDir = settings.value("lastDir", "").toString();
 }
 
 MainWindow::~MainWindow() {
-    QSettings settings("FJS Systems", "Graphics1");
+    QSettings settings("FJS Systems", "Scribbler");
     settings.setValue("lastDir", lastDir);
 }
 
 void MainWindow::resetScribbleSlot() {
     tabCount = 0;
     scribbler->resetScribbles();
+    tables.clear();
     dataHistory.clear();
     tabs->clear();
     tabs->setVisible(false);
@@ -94,14 +97,23 @@ void MainWindow::openFileSlot() {
     data >> dataHistory;
 
     for(int i = 0; i < dataHistory.length(); ++i) {
+        emit clearEvents();
+        scribbler->flipCapture(true);
         for(int j = 0; j < dataHistory[i].length(); ++j) {
             if (dataHistory[i][j].action == MouseEvent::Press) {
-                scribbler->addDot(dataHistory[i][j].pos);
+                dataHistory[i][j].addDot(scribbler->addDot(dataHistory[i][j].pos));
+                dataHistory[i][j].addLine(nullptr);
             } else if (dataHistory[i][j].action == MouseEvent::Move) {
-                scribbler->addDot(dataHistory[i][j].pos);
-                scribbler->addLine(dataHistory[i][j - 1].pos, dataHistory[i][j].pos);
+                dataHistory[i][j].addDot(scribbler->addDot(dataHistory[i][j].pos));
+                dataHistory[i][j].addLine(scribbler->addLine(dataHistory[i][j - 1].pos, dataHistory[i][j].pos));
+            } else {
+                dataHistory[i][j].addDot(nullptr);
+                dataHistory[i][j].addLine(nullptr);
             }
         }
+        emit clearEvents();
+        scribbler->flipCapture(false);
+
 
         QTableWidget *table = new QTableWidget();
         table->setRowCount(dataHistory[i].length());
@@ -122,10 +134,14 @@ void MainWindow::openFileSlot() {
             QTableWidgetItem *item3 = new QTableWidgetItem(QString::number(dataHistory[i][row].time));
             table->setItem(row, 2, item3);
         }
+        tables.append(table);
+
+        connect(table, &QTableWidget::itemSelectionChanged, this, &MainWindow::highlightItem);
 
         ++tabCount;
         tabs->addTab(table, "Table " + QString::number(tabCount));
         tabs->setVisible(true);
+        emit tabs->currentChanged(0);
     }
 }
 
@@ -141,20 +157,20 @@ void MainWindow::saveFileSlot() {
 }
 
 void MainWindow::startCaptureSlot() {
-    scribbler->flipCapture(true);
     emit clearEvents();
+    scribbler->flipCapture(true);
 }
 
 void MainWindow::endCaptureSlot() {
-    scribbler->flipCapture(false);
     QList<MouseEvent> events = scribbler->returnEvents();
     dataHistory << events;
     emit clearEvents();
+    scribbler->flipCapture(false);
 
     QTableWidget *table = new QTableWidget();
     table->setRowCount(events.length());
-    table->setColumnCount(3);
-    table->setHorizontalHeaderLabels(QStringList() << "Mouse Event" << "Position" << "Timestamp");
+    table->setColumnCount(5);
+    table->setHorizontalHeaderLabels(QStringList() << "Mouse Event" << "Position" << "Timestamp" << "Distance" << "Speed");
     for (int iRow = 0; iRow < events.length(); ++iRow) {
         QTableWidgetItem *item1;
         if (events[iRow].action == 0) {
@@ -169,12 +185,25 @@ void MainWindow::endCaptureSlot() {
         table->setItem(iRow, 1, item2);
         QTableWidgetItem *item3 = new QTableWidgetItem(QString::number(events[iRow].time));
         table->setItem(iRow, 2, item3);
+        QTableWidgetItem *item4;
+        QTableWidgetItem *item5;
+        if (events[iRow].action == 0 || events[iRow].action == 2) {
+            item4 = new QTableWidgetItem("N/A");
+            item5 = new QTableWidgetItem("N/A");
+        } else {
+            item4 = new QTableWidgetItem(QString::number(sqrt(pow(events[iRow - 1].pos.x() - events[iRow].pos.x(), 2) + pow(events[iRow - 1].pos.y() - events[iRow].pos.y(), 2))));
+            item5 = new QTableWidgetItem(QString::number(sqrt(pow(events[iRow - 1].pos.x() - events[iRow].pos.x(), 2) + pow(events[iRow - 1].pos.y() - events[iRow].pos.y(), 2)) / (events[iRow].time - events[iRow - 1].time)));
+        }
+        table->setItem(iRow, 3, item4);
+        table->setItem(iRow, 4, item5);
     }
+    tables.append(table);
+
+    connect(table, &QTableWidget::itemSelectionChanged, this, &MainWindow::highlightItem);
 
     ++tabCount;
     tabs->addTab(table, "Table " + QString::number(tabCount));
     tabs->setVisible(true);
-
 }
 
 void MainWindow::lineSegmentsSlot() {
@@ -183,4 +212,34 @@ void MainWindow::lineSegmentsSlot() {
 
 void MainWindow::dotsOnlySlot() {
     scribbler->linesVisible(false);
+}
+
+void MainWindow::highlightItem() {
+    QList<int> rowNums;
+    for (int i = 0; i < tables[scribbler->returnTabSelected()]->selectedItems().length(); ++i) {
+        rowNums.append(tables[scribbler->returnTabSelected()]->selectedItems()[i]->row());
+    }
+    for (int i = 0; i < dataHistory.length(); ++i) {
+        for (int j = 0; j < dataHistory[i].length(); ++j) {
+            if (tabs->currentWidget() == tables[i] && rowNums.contains(j)) {
+                if (dataHistory[i][j].dot != nullptr) {
+                    dataHistory[i][j].dot->setBrush(QColor(Qt::red));
+                    dataHistory[i][j].dot->setZValue(INFINITY);
+                }
+                if (dataHistory[i][j].line != nullptr) {
+                    dataHistory[i][j].line->setPen(QPen(Qt::red, scribbler->returnLineWidth(), Qt::SolidLine, Qt::FlatCap));
+                    dataHistory[i][j].line->setZValue(INFINITY);
+                }
+            } else {
+                if (dataHistory[i][j].dot != nullptr) {
+                    dataHistory[i][j].dot->setBrush(QColor(Qt::black));
+                    dataHistory[i][j].dot->setZValue(0);
+                }
+                if (dataHistory[i][j].line != nullptr) {
+                    dataHistory[i][j].line->setPen(QPen(Qt::black, scribbler->returnLineWidth(), Qt::SolidLine, Qt::FlatCap));
+                    dataHistory[i][j].line->setZValue(0);
+                }
+            }
+        }
+    }
 }

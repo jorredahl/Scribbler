@@ -5,7 +5,15 @@
 MouseEvent::MouseEvent() {}
 
 MouseEvent::MouseEvent(int _action, QPointF _pos, quint64 _time)
-    :action(_action),pos(_pos),time(_time) { }
+    :action(_action),pos(_pos),time(_time),dot(nullptr),line(nullptr) { }
+
+void MouseEvent::addDot(QGraphicsEllipseItem* newDot) {
+    dot = newDot;
+}
+
+void MouseEvent::addLine(QGraphicsLineItem* newLine) {
+    line = newLine;
+}
 
 QDataStream &operator<<(QDataStream &out, const MouseEvent &evt) {
     return out << evt.action << evt.pos << evt.time;
@@ -42,27 +50,70 @@ void Scribbler::resetScribbles() {
     for (int i = 0; i < dots.length(); ++i) scene.removeItem(dots.at(i));
     lines.clear();
     dots.clear();
+    curItems.clear();
+    uncItems.clear();
+    totalItems.clear();
+}
+
+void Scribbler::tabSelectedSlot(int index) {
+    tabSelected = index;
+
+    if (!curItems.isEmpty()) totalItems.append(curItems);
+    totalItems.append(uncItems);
+
+    for (int i = 0; i < totalItems.length(); ++i) {
+        if (i == index) {
+            for (int j = 0; j < totalItems[i].length(); ++j) {
+                totalItems[i][j]->setOpacity(1);
+            }
+        } else {
+            for (int j = 0; j < totalItems[i].length(); ++j) {
+                totalItems[i][j]->setOpacity(0.25);
+            }
+        }
+    }
+
+    totalItems.remove(totalItems.length() - 1);
+    if (!curItems.isEmpty()) totalItems.remove(totalItems.length() - 1);
 }
 
 QList<MouseEvent> Scribbler::returnEvents() {
     return events;
 }
 
-void Scribbler::addDot(QPointF p) {
+int Scribbler::returnTabSelected() {
+    return tabSelected;
+}
+
+double Scribbler::returnLineWidth() {
+    return lineWidth;
+}
+
+QGraphicsEllipseItem* Scribbler::addDot(QPointF p) {
     QGraphicsEllipseItem *tempDot;
     tempDot = scene.addEllipse(QRectF(p - QPointF(lineWidth * 0.5, lineWidth * 0.5), QSizeF(lineWidth, lineWidth)), Qt::NoPen, Qt::black);
 
     dots.append(tempDot);
+    curItems.append(tempDot);
+
+    return tempDot;
 }
 
-void Scribbler::addLine(QPointF p0 , QPointF p1) {
+QGraphicsLineItem* Scribbler::addLine(QPointF p0 , QPointF p1) {
     QGraphicsLineItem *tempLine;
     tempLine = scene.addLine(QLineF(p0, p1), QPen(Qt::black, lineWidth, Qt::SolidLine, Qt::FlatCap));
 
     lines.append(tempLine);
+    curItems.append(tempLine);
+
+    return tempLine;
 }
 
 void Scribbler::resetEvents() {
+    if (capture) {
+        totalItems.append(curItems);
+        curItems.clear();
+    }
     events.clear();
 }
 
@@ -77,7 +128,14 @@ void Scribbler::mousePressEvent(QMouseEvent *evt) {
 
     dots.append(tempDot);
 
-    if (capture) events << MouseEvent(MouseEvent::Press, p, evt->timestamp());
+    if (capture) {
+        MouseEvent tempEvent = MouseEvent(MouseEvent::Press, p, evt->timestamp());
+        tempEvent.addDot(tempDot);
+        events << tempEvent;
+        curItems.append(tempDot);
+    } else {
+        uncItems.append(tempDot);
+    }
 }
 
 void Scribbler::mouseMoveEvent(QMouseEvent *evt) {
@@ -93,9 +151,19 @@ void Scribbler::mouseMoveEvent(QMouseEvent *evt) {
     lines.append(tempLine);
     dots.append(tempDot);
 
-    lastPoint = p;
+    if (capture) {
+        MouseEvent tempEvent = MouseEvent(MouseEvent::Move, p, evt->timestamp());
+        tempEvent.addDot(tempDot);
+        tempEvent.addLine(tempLine);
+        events << tempEvent;
+        curItems.append(tempLine);
+        curItems.append(tempDot);
+    } else {
+        uncItems.append(tempLine);
+        uncItems.append(tempDot);
+    }
 
-    if (capture) events << MouseEvent(MouseEvent::Move, p, evt->timestamp());
+    lastPoint = p;
 }
 
 void Scribbler::mouseReleaseEvent(QMouseEvent *evt) {
@@ -103,5 +171,7 @@ void Scribbler::mouseReleaseEvent(QMouseEvent *evt) {
 
     QPointF p = mapToScene(evt->pos());
 
-    if (capture) events << MouseEvent(MouseEvent::Release, p, evt->timestamp());
+    if (capture) {
+        events << MouseEvent(MouseEvent::Release, p, evt->timestamp());
+    }
 }
