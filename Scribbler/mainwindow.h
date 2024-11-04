@@ -11,6 +11,8 @@ class MainWindow : public QMainWindow
 
     QString lastDir;
 
+    QAction *endCaptureAct;
+
     Scribbler *scribbler;
     QTabWidget *tabs;
     int tabCount;

@@ -40,8 +40,9 @@ MainWindow::MainWindow(QWidget *parent)
     connect(startCaptureAct, &QAction::triggered, this, &MainWindow::startCaptureSlot);
     startCaptureAct->setShortcut(Qt::CTRL | Qt::Key_B); //B for Begin :)
 
-    QAction *endCaptureAct = new QAction("&End Capture");
+    endCaptureAct = new QAction("&End Capture");
     connect(endCaptureAct, &QAction::triggered, this, &MainWindow::endCaptureSlot);
+    endCaptureAct->setEnabled(false);
     endCaptureAct->setShortcut(Qt::CTRL | Qt::Key_E);
 
     QMenu *captureMenu = new QMenu("&Capture");
@@ -159,6 +160,7 @@ void MainWindow::saveFileSlot() {
 void MainWindow::startCaptureSlot() {
     emit clearEvents();
     scribbler->flipCapture(true);
+    endCaptureAct->setEnabled(true);
 }
 
 void MainWindow::endCaptureSlot() {
@@ -204,6 +206,7 @@ void MainWindow::endCaptureSlot() {
     ++tabCount;
     tabs->addTab(table, "Table " + QString::number(tabCount));
     tabs->setVisible(true);
+    endCaptureAct->setEnabled(false);
 }
 
 void MainWindow::lineSegmentsSlot() {
